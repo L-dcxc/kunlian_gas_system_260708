@@ -5,7 +5,7 @@ from datetime import datetime
 from typing import Any, Sequence
 
 from PySide6.QtCore import Qt, Signal
-from PySide6.QtWidgets import QComboBox, QFrame, QHBoxLayout, QPushButton, QVBoxLayout, QWidget
+from PySide6.QtWidgets import QComboBox, QFrame, QHBoxLayout, QLabel, QPushButton, QVBoxLayout, QWidget
 
 from app.services.errors import ErrorCode
 from app.services.models import Pagination
@@ -14,7 +14,6 @@ from app.services.user_service import UpdateUserCommand
 from app.ui.common.data_table import DataTable, TableColumn, TableState
 from app.ui.common.dialogs import RiskConfirmDialog
 from app.ui.common.errors import controlled_error_text
-from app.ui.common.filter_panel import FilterPanel
 from app.ui.common.permission_hint import PermissionHint
 from app.ui.common.safe_text import SafeTextLabel
 from app.ui.settings.user_dialogs import UserEditorDialog
@@ -76,19 +75,22 @@ class UserManagementPage(QWidget):
         self.permission_hint = PermissionHint()
         self.permission_hint.setVisible(not self._can_manage_users)
 
-        self.filter_panel = FilterPanel("用户筛选")
         self.role_filter = QComboBox()
+        self.role_filter.setMaximumWidth(150)
         self.role_filter.addItem("全部角色", None)
         self.role_filter.addItem("管理员", Role.ADMIN.value)
         self.role_filter.addItem("操作员", Role.OPERATOR.value)
         self.status_filter = QComboBox()
+        self.status_filter.setMaximumWidth(150)
         self.status_filter.addItem("全部状态", None)
         self.status_filter.addItem("启用", True)
         self.status_filter.addItem("禁用", False)
-        self.filter_panel.add_field("role", "角色", self.role_filter)
-        self.filter_panel.add_field("status", "状态", self.status_filter)
-        self.filter_panel.searchRequested.connect(self.apply_filters)
-        self.filter_panel.resetRequested.connect(self.reset_filters)
+        self.search_button = QPushButton("查询")
+        self.search_button.setProperty("variant", "primary")
+        self.reset_button = QPushButton("重置")
+        self.search_button.clicked.connect(self.apply_filters)
+        self.reset_button.clicked.connect(self.reset_filters)
+        self.filter_bar = self._build_filter_bar()
 
         self.table = DataTable(
             [
@@ -119,6 +121,8 @@ class UserManagementPage(QWidget):
         self.refresh_button.clicked.connect(self.reload)
 
         actions = QHBoxLayout()
+        actions.setContentsMargins(0, 0, 0, 0)
+        actions.setSpacing(8)
         actions.addWidget(self.new_button)
         actions.addWidget(self.edit_button)
         actions.addWidget(self.enable_button)
@@ -126,21 +130,26 @@ class UserManagementPage(QWidget):
         actions.addStretch(1)
         actions.addWidget(self.refresh_button)
 
+        title_block = QVBoxLayout()
+        title_block.setContentsMargins(0, 0, 0, 0)
+        title_block.setSpacing(2)
+        title_block.addWidget(self.title_label)
+        title_block.addWidget(self.subtitle_label)
+
         header = QFrame(self)
-        header.setProperty("panel", "true")
-        header_layout = QVBoxLayout(header)
-        header_layout.setContentsMargins(16, 16, 16, 16)
-        header_layout.setSpacing(8)
-        header_layout.addWidget(self.title_label)
-        header_layout.addWidget(self.subtitle_label)
+        header.setObjectName("WorkPageHeader")
+        header_layout = QHBoxLayout(header)
+        header_layout.setContentsMargins(0, 0, 0, 8)
+        header_layout.setSpacing(12)
+        header_layout.addLayout(title_block, 1)
         header_layout.addWidget(self.permission_hint)
         header_layout.addLayout(actions)
 
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(16, 16, 16, 16)
-        layout.setSpacing(12)
+        layout.setContentsMargins(12, 12, 12, 12)
+        layout.setSpacing(8)
         layout.addWidget(header)
-        layout.addWidget(self.filter_panel)
+        layout.addWidget(self.filter_bar)
         layout.addWidget(self.table, 1)
 
         self._apply_permission_state()
@@ -162,7 +171,7 @@ class UserManagementPage(QWidget):
         self._per_page = per_page
         self._selected_user_id = None
         self.table.set_state(TableState.LOADING, "正在加载用户")
-        self.filter_panel.set_querying(True)
+        self._set_querying(True)
         self._apply_action_state()
         try:
             result = self._call_list_users(UserListQuery(
@@ -175,7 +184,7 @@ class UserManagementPage(QWidget):
             self._show_load_error(LOAD_FAILED_TEXT)
             return
         finally:
-            self.filter_panel.set_querying(False)
+            self._set_querying(False)
 
         if not bool(getattr(result, "success", False)):
             if int(getattr(result, "code", 0) or 0) == int(ErrorCode.PERMISSION_DENIED):
@@ -261,6 +270,35 @@ class UserManagementPage(QWidget):
 
     def _change_page(self, page: int, per_page: int) -> None:
         self.load_users(page=page, per_page=per_page)
+
+    def _build_filter_bar(self) -> QFrame:
+        bar = QFrame(self)
+        bar.setObjectName("WorkFilterBar")
+        layout = QHBoxLayout(bar)
+        layout.setContentsMargins(10, 6, 10, 6)
+        layout.setSpacing(8)
+        title = QLabel("筛选")
+        title.setProperty("role", "fieldLabel")
+        role_label = QLabel("角色")
+        role_label.setProperty("role", "fieldLabel")
+        status_label = QLabel("状态")
+        status_label.setProperty("role", "fieldLabel")
+        layout.addWidget(title)
+        layout.addSpacing(4)
+        layout.addWidget(role_label)
+        layout.addWidget(self.role_filter)
+        layout.addWidget(status_label)
+        layout.addWidget(self.status_filter)
+        layout.addStretch(1)
+        layout.addWidget(self.reset_button)
+        layout.addWidget(self.search_button)
+        return bar
+
+    def _set_querying(self, querying: bool) -> None:
+        self.search_button.setDisabled(querying)
+        self.reset_button.setDisabled(querying)
+        self.role_filter.setDisabled(querying)
+        self.status_filter.setDisabled(querying)
 
     def _selection_changed(self) -> None:
         indexes = self.table.table.selectionModel().selectedRows()

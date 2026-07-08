@@ -290,16 +290,29 @@ QFrame[widget="filterPanel"] {{
     border: {tokens['border_width']} solid {tokens['border_default']};
     border-radius: {tokens['radius_md']};
 }}
-QFrame#ConfigCategoryNav {{
+QFrame#WorkPageHeader {{
+    background: transparent;
+    border: none;
+    border-bottom: {tokens['border_width']} solid {tokens['border_default']};
+}}
+QFrame#WorkFilterBar {{
     background: {tokens['bg_panel']};
     border: {tokens['border_width']} solid {tokens['border_default']};
-    border-radius: {tokens['radius_md']};
+    border-radius: {tokens['radius_sm']};
+}}
+QFrame#ConfigCategoryNav {{
+    background: {tokens['bg_subtle']};
+    border: {tokens['border_width']} solid {tokens['border_default']};
+    border-radius: {tokens['radius_sm']};
+    max-width: 620px;
 }}
 QFrame#ConfigCategoryNav QPushButton {{
-    min-height: 32px;
+    min-width: 100px;
+    min-height: 30px;
     color: {tokens['text_secondary']};
-    background: {tokens['bg_subtle']};
-    border-color: {tokens['border_default']};
+    background: transparent;
+    border-color: transparent;
+    border-radius: {tokens['radius_sm']};
 }}
 QFrame#ConfigCategoryNav QPushButton:checked {{
     color: {tokens['text_inverse']};
