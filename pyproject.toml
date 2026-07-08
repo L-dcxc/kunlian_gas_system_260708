@@ -1,0 +1,37 @@
+[project]
+name = "gas-safety-alarm-monitor"
+version = "0.1.0"
+description = "Windows desktop gas safety alarm monitoring system skeleton."
+requires-python = ">=3.11"
+readme = "AGENTS.md"
+dependencies = [
+    "PySide6>=6.7,<7",
+    "pyserial>=3.5,<4",
+    "fastapi>=0.115,<1",
+    "uvicorn>=0.30,<1",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8,<9",
+    "ruff>=0.8,<1",
+    "pyinstaller>=6,<7",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+
+[tool.ruff]
+target-version = "py311"
+line-length = 120
+src = ["app", "tests"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
+ignore = []
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+line-ending = "auto"

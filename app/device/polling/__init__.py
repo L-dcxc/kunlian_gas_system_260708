@@ -1,0 +1,1 @@
+"""Polling worker container package."""
