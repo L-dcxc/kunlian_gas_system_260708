@@ -327,6 +327,29 @@ QFrame#ConfigCategoryNav QPushButton:hover:!checked {{
 QWidget#ConfigFormFields {{
     background: transparent;
 }}
+QFrame#ConfigEditorPanel {{
+    background: {tokens['bg_panel']};
+    border: {tokens['border_width']} solid {tokens['border_default']};
+    border-radius: {tokens['radius_md']};
+}}
+QFrame#ConfigEditorHeader {{
+    background: {tokens['bg_subtle']};
+    border: none;
+    border-bottom: {tokens['border_width']} solid {tokens['border_default']};
+    border-top-left-radius: {tokens['radius_md']};
+    border-top-right-radius: {tokens['radius_md']};
+}}
+QLabel#ConfigEditorTitle {{
+    font-size: {tokens['font_size_md']};
+    font-weight: {tokens['font_weight_bold']};
+}}
+QWidget#ConfigEditorBody {{
+    background: {tokens['bg_panel']};
+}}
+QFrame#ConfigEditorHeader QPushButton {{
+    min-height: 30px;
+    padding: 0 14px;
+}}
 QLabel[role="panelTitle"], QLabel[role="dialogTitle"] {{
     font-size: {tokens['font_size_lg']};
     font-weight: {tokens['font_weight_bold']};

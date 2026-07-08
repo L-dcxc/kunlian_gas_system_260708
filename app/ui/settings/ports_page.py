@@ -7,8 +7,6 @@ from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
     QFrame,
-    QGridLayout,
-    QHBoxLayout,
     QLabel,
     QLineEdit,
     QPushButton,
@@ -22,8 +20,8 @@ from app.services.errors import ErrorCode
 from app.ui.common.data_table import DataTable, TableColumn, TableState
 from app.ui.common.dialogs import RiskConfirmDialog
 from app.ui.common.errors import ErrorBanner, ValidationHint, controlled_error_text
-from app.ui.common.safe_text import SafeTextLabel
 from app.ui.common.status import repolish
+from app.ui.settings.config_editor import build_config_editor
 
 LOAD_FAILED_TEXT = "端口列表加载失败，请稍后重试。"
 SAVE_FAILED_TEXT = "端口保存失败，请稍后重试。"
@@ -108,11 +106,6 @@ class PortsPage(QWidget):
 
         self._apply_field_widths()
         self._build_form()
-        actions = QHBoxLayout()
-        actions.addWidget(self.new_button)
-        actions.addWidget(self.save_button)
-        actions.addWidget(self.delete_button)
-        actions.addStretch(1)
         body = QVBoxLayout()
         body.setSpacing(12)
         body.addWidget(self.table, 3)
@@ -121,7 +114,6 @@ class PortsPage(QWidget):
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(12)
         layout.addWidget(self.error_banner)
-        layout.addLayout(actions)
         layout.addLayout(body, 1)
         self._apply_permission_state()
         self._sync_channel_fields()
@@ -235,21 +227,13 @@ class PortsPage(QWidget):
         )
 
     def _build_form(self) -> None:
-        fields_panel = QWidget(self.form)
-        fields_panel.setObjectName("ConfigFormFields")
-        fields_panel.setMaximumWidth(760)
-        shell = QHBoxLayout(self.form)
-        shell.setContentsMargins(16, 14, 16, 14)
-        shell.setSpacing(0)
-        shell.addWidget(fields_panel)
-        shell.addStretch(1)
-
-        grid = QGridLayout(fields_panel)
+        _fields_panel, grid = build_config_editor(
+            self.form,
+            "编辑端口配置",
+            (self.new_button, self.save_button, self.delete_button),
+            fields_width=760,
+        )
         self.form_grid = grid
-        grid.setContentsMargins(0, 0, 0, 0)
-        grid.setHorizontalSpacing(12)
-        grid.setVerticalSpacing(8)
-        grid.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop)
         fields = [
             ("端口名称", self.name_edit), ("类型", self.channel_combo), ("串口号", self.serial_port_edit),
             ("波特率", self.baud_spin), ("数据位", self.data_bits_spin), ("校验", self.parity_combo),

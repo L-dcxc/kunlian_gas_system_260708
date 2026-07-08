@@ -3,7 +3,7 @@ from __future__ import annotations
 from typing import Any
 
 from PySide6.QtCore import Qt, Signal
-from PySide6.QtWidgets import QCheckBox, QFrame, QGridLayout, QHBoxLayout, QLabel, QLineEdit, QPushButton, QVBoxLayout, QWidget
+from PySide6.QtWidgets import QCheckBox, QFrame, QLabel, QLineEdit, QPushButton, QVBoxLayout, QWidget
 
 from app.services.device_config_service import GasTypeCommand
 from app.services.errors import ErrorCode
@@ -11,6 +11,7 @@ from app.ui.common.data_table import DataTable, TableColumn, TableState
 from app.ui.common.dialogs import RiskConfirmDialog
 from app.ui.common.errors import ErrorBanner, ValidationHint, controlled_error_text
 from app.ui.common.status import repolish
+from app.ui.settings.config_editor import build_config_editor
 
 LOAD_FAILED_TEXT = "气体类型列表加载失败，请稍后重试。"
 SAVE_FAILED_TEXT = "气体类型保存失败，请稍后重试。"
@@ -69,10 +70,9 @@ class GasTypesPage(QWidget):
         self._apply_field_widths()
         self._build_form()
 
-        actions = QHBoxLayout(); actions.addWidget(self.new_button); actions.addWidget(self.save_button); actions.addWidget(self.delete_button); actions.addStretch(1)
         body = QVBoxLayout(); body.setSpacing(12); body.addWidget(self.table, 3); body.addWidget(self.form, 2)
         layout = QVBoxLayout(self); layout.setContentsMargins(0, 0, 0, 0); layout.setSpacing(12)
-        layout.addWidget(self.error_banner); layout.addLayout(actions); layout.addLayout(body, 1)
+        layout.addWidget(self.error_banner); layout.addLayout(body, 1)
         self._apply_permission_state(); self._apply_selection_state()
 
     def reload(self) -> None:
@@ -164,17 +164,13 @@ class GasTypesPage(QWidget):
         )
 
     def _build_form(self) -> None:
-        fields_panel = QWidget(self.form)
-        fields_panel.setObjectName("ConfigFormFields")
-        fields_panel.setMaximumWidth(760)
-        shell = QHBoxLayout(self.form)
-        shell.setContentsMargins(16, 14, 16, 14)
-        shell.setSpacing(0)
-        shell.addWidget(fields_panel)
-        shell.addStretch(1)
-
-        grid = QGridLayout(fields_panel); self.form_grid = grid; grid.setContentsMargins(0, 0, 0, 0); grid.setHorizontalSpacing(12); grid.setVerticalSpacing(8)
-        grid.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop)
+        _fields_panel, grid = build_config_editor(
+            self.form,
+            "编辑气体类型",
+            (self.new_button, self.save_button, self.delete_button),
+            fields_width=760,
+        )
+        self.form_grid = grid
         fields = (
             ("名称", self.name_edit), ("单位", self.unit_edit),
             ("量程下限", self.range_min_edit), ("量程上限", self.range_max_edit),
