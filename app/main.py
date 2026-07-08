@@ -28,6 +28,7 @@ from app.services.file_validation import FileValidator
 from app.services.import_export import ImportExportService
 from app.services.license_service import LicenseService
 from app.services.linkage_service import LinkageService
+from app.services.login_preferences import LoginPreferenceStore
 from app.services.local_api_config_service import LocalApiConfigFacade
 from app.services.maintenance_service import MaintenanceService
 from app.services.map_config_service import MapConfigService
@@ -123,11 +124,13 @@ def _assemble_services(context: AppContext) -> None:
             "read_service": api_read,
         }
     )
+    user_service = UserService(context.db, session_store)
+
     services.update(
         {
             "auth": auth_service,
             "license": license_service,
-            "users": UserService(context.db, session_store),
+            "users": user_service,
             "monitoring_read": monitoring_read,
             "chart": ChartService(context.db, context.state_store),
             "records": RecordService(context.db, session_store=session_store, export_service=export_service),
@@ -155,6 +158,7 @@ def _assemble_services(context: AppContext) -> None:
             "export": export_service,
         }
     )
+    user_service.ensure_default_admin()
 
 
 def _run_gui(context: AppContext) -> int:
@@ -163,13 +167,15 @@ def _run_gui(context: AppContext) -> int:
     from app.ui.login.change_password_dialog import ChangePasswordDialog
     from app.ui.login.license_dialog import LicenseDialog
     from app.ui.login.login_window import LoginWindow
+    from app.ui.login.password_recovery_dialog import PasswordRecoveryDialog
     from app.ui.theme import AppTheme
 
     app = QApplication.instance() or QApplication([sys.argv[0]])
     AppTheme().apply_to(app)
     auth_service = context.containers.services["auth"]
     license_service = context.containers.services["license"]
-    login = LoginWindow(auth_service, license_service)
+    login_preferences = LoginPreferenceStore(context.paths.config_dir / "login_preferences.json")
+    login = LoginWindow(auth_service, license_service, login_preferences=login_preferences)
     windows: dict[str, object] = {"login": login}
 
     def open_license() -> None:
@@ -181,18 +187,50 @@ def _run_gui(context: AppContext) -> int:
         dialog = ChangePasswordDialog(auth_service, None, login, target_username=username or None)
         dialog.exec()
 
+    def open_password_recovery(username: str) -> None:
+        dialog = PasswordRecoveryDialog(auth_service, login, username=username or None)
+        if dialog.exec():
+            recovered_username = dialog.username_edit.text().strip()
+            if recovered_username:
+                login.username_edit.setText(recovered_username)
+                login.password_edit.clear()
+
     def show_initial_admin_pending() -> None:
         QMessageBox.information(login, "初始管理员", "初始管理员创建流程待确认，请联系管理员或供应商。")
 
     def enter_shell(session: object) -> None:
+        if bool(getattr(session, "must_change_password", False)):
+            dialog = ChangePasswordDialog(
+                auth_service,
+                session,
+                login,
+                target_username=getattr(session, "username", None),
+                force_change=True,
+            )
+            if not dialog.exec():
+                auth_service.logout(session)
+                login.show_error("请先修改默认密码后再进入系统。")
+                return
+            refreshed = auth_service.session_store.get(getattr(session, "session_id", ""))
+            if refreshed is not None:
+                session = refreshed
         shell = _create_shell(context, session)
         windows["shell"] = shell
         shell.destroyed.connect(lambda _obj=None: windows.pop("shell", None))
+        shell.logoutRequested.connect(return_to_login)
         shell.show()
         login.close()
 
+    def return_to_login(session: object) -> None:
+        login.password_edit.clear()
+        login.refresh_license_status()
+        login.show()
+        login.raise_()
+        login.activateWindow()
+
     login.licenseRequested.connect(open_license)
     login.changePasswordRequested.connect(open_change_password)
+    login.passwordRecoveryRequested.connect(open_password_recovery)
     login.initialAdminRequested.connect(show_initial_admin_pending)
     login.loggedIn.connect(enter_shell)
     login.show()

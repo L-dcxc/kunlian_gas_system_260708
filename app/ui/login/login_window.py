@@ -16,6 +16,7 @@ class LoginWindow(QWidget):
     loginFailed = Signal(str)
     licenseRequested = Signal()
     changePasswordRequested = Signal(str)
+    passwordRecoveryRequested = Signal(str)
     initialAdminRequested = Signal()
 
     def __init__(
@@ -26,10 +27,12 @@ class LoginWindow(QWidget):
         *,
         product_name: str = "气体安全报警监控系统",
         initialization_required: bool = False,
+        login_preferences: object | None = None,
     ) -> None:
         super().__init__(parent)
         self._auth_service = auth_service
         self._license_service = license_service
+        self._login_preferences = login_preferences
         self._submitting = False
 
         self.setWindowTitle("系统登录")
@@ -61,6 +64,7 @@ class LoginWindow(QWidget):
         self.username_edit.setPlaceholderText("请输入账号")
         self.username_edit.setMaxLength(80)
         self.username_edit.returnPressed.connect(self.submit)
+        self._load_last_username()
 
         self.password_label = QLabel("密码")
         self.password_label.setProperty("role", "fieldLabel")
@@ -80,10 +84,13 @@ class LoginWindow(QWidget):
         self.license_button.clicked.connect(self.licenseRequested.emit)
         self.change_password_button = QPushButton("修改密码")
         self.change_password_button.clicked.connect(self._request_change_password)
+        self.password_recovery_button = QPushButton("找回密码")
+        self.password_recovery_button.clicked.connect(self._request_password_recovery)
 
         actions = QHBoxLayout()
         actions.addWidget(self.license_button)
         actions.addWidget(self.change_password_button)
+        actions.addWidget(self.password_recovery_button)
         actions.addStretch(1)
         actions.addWidget(self.login_button)
 
@@ -141,6 +148,7 @@ class LoginWindow(QWidget):
                 return
             result = self._auth_service.login(username, password)
             if bool(getattr(result, "success", False)):
+                self._save_last_username(username)
                 self.clear_error()
                 self.loggedIn.emit(getattr(result, "data", None))
             else:
@@ -175,6 +183,9 @@ class LoginWindow(QWidget):
     def _request_change_password(self) -> None:
         self.changePasswordRequested.emit(self.username_edit.text().strip())
 
+    def _request_password_recovery(self) -> None:
+        self.passwordRecoveryRequested.emit(self.username_edit.text().strip())
+
     def _get_license_status(self) -> object | None:
         if self._license_service is None or not hasattr(self._license_service, "get_license_status"):
             return None
@@ -204,6 +215,26 @@ class LoginWindow(QWidget):
         self.username_edit.setEnabled(not submitting)
         self.password_edit.setEnabled(not submitting)
         self.login_button.setText("登录中..." if submitting else "登录")
+
+    def _load_last_username(self) -> None:
+        store = self._login_preferences
+        if store is None or not hasattr(store, "get_last_username"):
+            return
+        try:
+            username = store.get_last_username()
+        except Exception:
+            return
+        if isinstance(username, str) and username:
+            self.username_edit.setText(username)
+
+    def _save_last_username(self, username: str) -> None:
+        store = self._login_preferences
+        if store is None or not hasattr(store, "save_last_username"):
+            return
+        try:
+            store.save_last_username(username)
+        except Exception:
+            return
 
 
 def _repolish(widget: QWidget) -> None:

@@ -69,7 +69,7 @@ QFrame[panel="true"] {{
     border: {tokens['border_width']} solid {tokens['border_default']};
     border-radius: {tokens['radius_md']};
 }}
-QFrame#LoginCard, QFrame#LicenseCard, QFrame#ChangePasswordCard {{
+QFrame#LoginCard, QFrame#LicenseCard, QFrame#ChangePasswordCard, QFrame#PasswordRecoveryCard {{
     background: {tokens['bg_panel']};
     border: {tokens['border_width']} solid {tokens['border_default']};
     border-radius: {tokens['radius_lg']};
@@ -149,7 +149,9 @@ QPushButton {{
     border: {tokens['border_width']} solid {tokens['border_default']};
     border-radius: {tokens['radius_md']};
     font-weight: {tokens['font_weight_medium']};
+    outline: none;
 }}
+QPushButton:focus {{ outline: none; }}
 QPushButton:hover {{
     border-color: {tokens['primary']};
 }}
@@ -189,6 +191,11 @@ QLineEdit, QTextEdit, QPlainTextEdit, QComboBox, QSpinBox, QDoubleSpinBox, QDate
     border: {tokens['border_width']} solid {tokens['border_default']};
     border-radius: {tokens['radius_sm']};
     padding: 0 {tokens['space_2']};
+    outline: none;
+}}
+QLineEdit:focus, QTextEdit:focus, QPlainTextEdit:focus, QComboBox:focus,
+QSpinBox:focus, QDoubleSpinBox:focus, QDateTimeEdit:focus {{
+    outline: none;
 }}
 QTextEdit, QPlainTextEdit {{
     padding: {tokens['space_2']};
@@ -209,6 +216,19 @@ QTableView, QTreeView, QListView {{
     gridline-color: {tokens['border_default']};
     selection-background-color: {tokens['primary']};
     selection-color: {tokens['text_inverse']};
+    alternate-background-color: {tokens['bg_subtle']};
+    outline: none;
+}}
+QTableView::item, QTreeView::item, QListView::item {{
+    min-height: 28px;
+    padding: {tokens['space_1']} {tokens['space_2']};
+}}
+QTableView::item:selected, QTreeView::item:selected, QListView::item:selected {{
+    color: {tokens['text_inverse']};
+    background: {tokens['primary']};
+}}
+QTableView::item:focus, QTreeView::item:focus, QListView::item:focus {{
+    outline: none;
 }}
 QHeaderView::section {{
     color: {tokens['text_secondary']};
@@ -217,6 +237,42 @@ QHeaderView::section {{
     border-right: {tokens['border_width']} solid {tokens['border_default']};
     padding: {tokens['space_2']};
     font-weight: {tokens['font_weight_medium']};
+}}
+QTabWidget::pane {{
+    background: {tokens['bg_panel']};
+    border: {tokens['border_width']} solid {tokens['border_default']};
+    border-radius: {tokens['radius_md']};
+    top: -1px;
+}}
+QTabBar::tab {{
+    min-width: 84px;
+    min-height: 32px;
+    color: {tokens['text_secondary']};
+    background: {tokens['bg_subtle']};
+    border: {tokens['border_width']} solid {tokens['border_default']};
+    border-bottom-color: {tokens['border_default']};
+    padding: 0 {tokens['space_4']};
+    margin-right: {tokens['space_1']};
+    font-weight: {tokens['font_weight_medium']};
+    outline: none;
+}}
+QTabBar::tab:focus {{ outline: none; }}
+QTabBar::tab:selected {{
+    color: {tokens['text_inverse']};
+    background: {tokens['primary']};
+    border-color: {tokens['primary']};
+}}
+QTabBar::tab:hover:!selected {{
+    color: {tokens['primary']};
+    background: {tokens['bg_panel']};
+    border-color: {tokens['primary']};
+}}
+QScrollArea {{
+    background: transparent;
+    border: none;
+}}
+QScrollArea > QWidget > QWidget {{
+    background: transparent;
 }}
 QProgressBar {{
     min-height: 8px;
@@ -238,12 +294,25 @@ QFrame#ConfigCategoryNav {{
     background: {tokens['bg_panel']};
     border: {tokens['border_width']} solid {tokens['border_default']};
     border-radius: {tokens['radius_md']};
-    min-width: 120px;
+}}
+QFrame#ConfigCategoryNav QPushButton {{
+    min-height: 32px;
+    color: {tokens['text_secondary']};
+    background: {tokens['bg_subtle']};
+    border-color: {tokens['border_default']};
 }}
 QFrame#ConfigCategoryNav QPushButton:checked {{
     color: {tokens['text_inverse']};
     background: {tokens['primary']};
     border-color: {tokens['primary']};
+}}
+QFrame#ConfigCategoryNav QPushButton:hover:!checked {{
+    color: {tokens['primary']};
+    background: {tokens['bg_panel']};
+    border-color: {tokens['primary']};
+}}
+QWidget#ConfigFormFields {{
+    background: transparent;
 }}
 QLabel[role="panelTitle"], QLabel[role="dialogTitle"] {{
     font-size: {tokens['font_size_lg']};
@@ -493,34 +562,109 @@ QFrame#ChartPanel QPushButton {{
 QCheckBox {{
     spacing: {tokens['space_2']};
     background: transparent;
-}}
-QMainWindow#MainWindowShell {{
-    background: {tokens['bg_window']};
-}}
-QListWidget#ShellNav {{
-    background: #111827;
-    color: #CBD5E1;
-    border: none;
-    font-size: {tokens['font_size_md']};
     outline: none;
 }}
-QListWidget#ShellNav::item {{
-    min-height: 40px;
-    padding-left: {tokens['space_4']};
+QCheckBox:focus {{ outline: none; }}
+QComboBox QAbstractItemView {{
+    outline: none;
 }}
-QListWidget#ShellNav::item:selected {{
-    background: {tokens['primary']};
-    color: {tokens['text_inverse']};
+QComboBox QAbstractItemView::item:focus {{
+    outline: none;
 }}
-QListWidget#ShellNav::item:disabled {{
-    color: #64748B;
+QMainWindow#MainWindowShell {{
+    background: #DFF0FA;
 }}
-QFrame#ShellContent {{
-    background: {tokens['bg_window']};
+QFrame#ShellHeader {{
+    background: #CBE4F5;
+    border-bottom: 1px solid #8DBBDD;
 }}
-QFrame#ShellTopBar {{
-    background: {tokens['bg_panel']};
-    border-bottom: {tokens['border_width']} solid {tokens['border_default']};
+QLabel#ShellLogo {{
+    color: #356A92;
+    background: #EAF6FE;
+    border: 1px solid #8DBBDD;
+    border-radius: 4px;
+    font-size: 18px;
+    font-weight: {tokens['font_weight_bold']};
+    min-width: 58px;
+    min-height: 36px;
+}}
+QLabel#ShellTitle {{
+    color: #1F5C8A;
+    font-size: 24px;
+    font-weight: {tokens['font_weight_bold']};
+}}
+QLabel#ShellSubtitle {{
+    color: #2F6F9C;
+    font-size: {tokens['font_size_md']};
+}}
+QFrame#ShellNavBar {{
+    background: transparent;
+}}
+QPushButton#ShellNavButton {{
+    min-width: 92px;
+    min-height: 34px;
+    color: #2F638F;
+    background: transparent;
+    border: 1px solid transparent;
+    border-radius: 17px;
+    padding: 0 12px;
+    font-weight: {tokens['font_weight_medium']};
+}}
+QPushButton#ShellNavButton:hover {{
+    color: #0F4F82;
+    background: #DFF0FA;
+    border-color: #9CC7E3;
+}}
+QPushButton#ShellNavButton[active="true"] {{
+    color: #1F5C8A;
+    background: #EAF6FE;
+    border: 1px solid #9CC7E3;
+    font-weight: {tokens['font_weight_bold']};
+}}
+QPushButton#ShellNavButton[allowed="false"] {{
+    color: #7B95A8;
+    background: transparent;
+}}
+QPushButton#ShellNavPageButton {{
+    min-width: 30px;
+    max-width: 30px;
+    min-height: 30px;
+    color: #1F5C8A;
+    background: #EAF6FE;
+    border: 1px solid #9CC7E3;
+    border-radius: 15px;
+    padding: 0;
+    font-size: 18px;
+    font-weight: {tokens['font_weight_bold']};
+}}
+QPushButton#ShellNavPageButton:disabled {{
+    color: #94A3B8;
+    background: #D7E8F3;
+    border-color: #B8D3E6;
+}}
+QPushButton#ShellLogoutButton {{
+    min-width: 78px;
+    min-height: 30px;
+    color: #1F5C8A;
+    background: #EAF6FE;
+    border: 1px solid #9CC7E3;
+    border-radius: 4px;
+    padding: 0 10px;
+}}
+QPushButton#ShellLogoutButton:hover {{
+    color: #0F4F82;
+    background: #F8FCFF;
+    border-color: #6EA9D4;
+}}
+QFrame#ShellBottomStatusBar {{
+    background: #DFF0FA;
+    border-top: 1px solid #8DBBDD;
+}}
+QLabel#ShellStatusLabel {{
+    min-height: 20px;
+    max-height: 20px;
+    padding: 0 4px;
+    font-size: {tokens['font_size_sm']};
 }}
 QFrame#GlobalAlertBar {{
     background: {tokens['bg_subtle']};
@@ -537,9 +681,9 @@ QFrame#GlobalAlertBar[active="true"] QLabel {{
 QLabel#ShellBottomMessage {{
     min-height: 28px;
     padding: {tokens['space_1']} {tokens['space_4']};
-    color: {tokens['text_secondary']};
-    background: {tokens['bg_panel']};
-    border-top: {tokens['border_width']} solid {tokens['border_default']};
+    color: #2F638F;
+    background: #DFF0FA;
+    border-top: 1px solid #B8D3E6;
 }}
 QLabel#ShellBottomMessage[status="warning"] {{
     color: #92400E;

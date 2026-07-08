@@ -25,12 +25,14 @@ class ChangePasswordDialog(QDialog):
         *,
         target_username: str | None = None,
         can_modify_target: bool = True,
+        force_change: bool = False,
     ) -> None:
         super().__init__(parent)
         self._auth_service = auth_service
         self._session = session
         self._submitting = False
         self._blocked_by_permission = not can_modify_target
+        self._force_change = force_change
 
         self.setWindowTitle("修改密码")
         self.setModal(True)
@@ -40,9 +42,12 @@ class ChangePasswordDialog(QDialog):
         self.card.setObjectName("ChangePasswordCard")
         self.card.setProperty("panel", "true")
 
-        self.title_label = SafeTextLabel("修改密码", selectable=False)
+        self.title_label = SafeTextLabel("首次登录修改密码" if force_change else "修改密码", selectable=False)
         self.title_label.setProperty("role", "dialogTitle")
-        target_text = f"目标账号：{target_username}" if target_username else "仅支持当前登录账号修改本人密码。"
+        if force_change:
+            target_text = "首次登录必须修改默认密码，完成后才能进入系统。"
+        else:
+            target_text = f"目标账号：{target_username}" if target_username else "仅支持当前登录账号修改本人密码。"
         self.target_label = SafeTextLabel(target_text, selectable=True)
         self.target_label.setProperty("role", "muted")
 
@@ -111,6 +116,13 @@ class ChangePasswordDialog(QDialog):
         root.addWidget(self.card)
 
         self._apply_permission_block()
+        self.cancel_button.setVisible(not force_change)
+
+    def reject(self) -> None:
+        if self._force_change:
+            self.show_error("请先修改默认密码后再进入系统。")
+            return
+        super().reject()
 
     def submit(self) -> None:
         if self._submitting:

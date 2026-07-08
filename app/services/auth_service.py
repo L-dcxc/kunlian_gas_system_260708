@@ -20,6 +20,7 @@ PASSWORD_ITERATIONS = 210_000
 SALT_BYTES = 16
 LOGIN_FAILED_MESSAGE = "用户名或密码错误"
 SESSION_INVALID_MESSAGE = "登录状态已失效，请重新登录。"
+FACTORY_RECOVERY_PASSWORD = "kunlian20131213"
 
 
 @dataclass(frozen=True, slots=True)
@@ -31,6 +32,7 @@ class Session:
     permissions: tuple[str, ...]
     permission_version: int
     login_at: str
+    must_change_password: bool = False
 
 
 class SessionStore:
@@ -38,7 +40,15 @@ class SessionStore:
         self._sessions: dict[str, Session] = {}
         self._lock = threading.RLock()
 
-    def create(self, *, user_id: int, username: str, role: str, permission_version: int) -> Session:
+    def create(
+        self,
+        *,
+        user_id: int,
+        username: str,
+        role: str,
+        permission_version: int,
+        must_change_password: bool = False,
+    ) -> Session:
         session = Session(
             session_id=secrets.token_urlsafe(32),
             user_id=user_id,
@@ -47,6 +57,7 @@ class SessionStore:
             permissions=permissions_for_role(role),
             permission_version=permission_version,
             login_at=datetime.now(timezone.utc).isoformat(),
+            must_change_password=must_change_password,
         )
         with self._lock:
             self._sessions[session.session_id] = session
@@ -64,7 +75,13 @@ class SessionStore:
         with self._lock:
             self._sessions.clear()
 
-    def refresh_permission_version(self, session_id: str, permission_version: int) -> None:
+    def refresh_permission_version(
+        self,
+        session_id: str,
+        permission_version: int,
+        *,
+        must_change_password: bool | None = None,
+    ) -> None:
         with self._lock:
             current = self._sessions.get(session_id)
             if current is None:
@@ -77,6 +94,9 @@ class SessionStore:
                 permissions=current.permissions,
                 permission_version=permission_version,
                 login_at=current.login_at,
+                must_change_password=current.must_change_password
+                if must_change_password is None
+                else must_change_password,
             )
 
     def validate(self, database: Database, session_or_id: Session | str) -> Session:
@@ -146,6 +166,7 @@ class AuthService:
             username=str(row["username"]),
             role=str(row["role"]),
             permission_version=int(row["permission_version"]),
+            must_change_password=int(row["must_change_password"]) == 1,
         )
         return ServiceResult.ok(session)
 
@@ -178,6 +199,7 @@ class AuthService:
                 session.user_id,
                 password_hash=password_hash,
                 password_salt=password_salt,
+                must_change_password=False,
                 increment_permission_version=True,
             )
             updated = users.find_by_id(session.user_id)
@@ -193,7 +215,52 @@ class AuthService:
             )
             uow.commit()
         if updated is not None:
-            self.session_store.refresh_permission_version(session.session_id, int(updated["permission_version"]))
+            self.session_store.refresh_permission_version(
+                session.session_id,
+                int(updated["permission_version"]),
+                must_change_password=False,
+            )
+        return ServiceResult.ok(None)
+
+    def recover_password_with_factory_password(
+        self,
+        username: str,
+        factory_password: str,
+        new_password: str,
+    ) -> ServiceResult[None]:
+        normalized_username = _normalize_username(username)
+        if factory_password != FACTORY_RECOVERY_PASSWORD:
+            self._log_factory_recovery(normalized_username, "denied")
+            return ServiceResult.fail(code=int(ErrorCode.PERMISSION_DENIED), message="厂家密码无效")
+        if not normalized_username or not _valid_new_password(new_password):
+            return ServiceResult.fail(code=int(ErrorCode.VALIDATION_ERROR), message="账号或新密码不符合要求")
+
+        with UnitOfWork(self._database) as uow:
+            users = UserRepository(uow)
+            row = users.find_active_by_username(normalized_username)
+            if row is None or int(row["is_active"]) != 1 or row["deleted_at"] is not None:
+                self._log_factory_recovery(normalized_username, "denied", uow=uow)
+                uow.commit()
+                return ServiceResult.fail(code=int(ErrorCode.NOT_FOUND), message="账号不存在或不可用")
+            password_hash, password_salt = hash_password(new_password)
+            users.update_user(
+                int(row["id"]),
+                password_hash=password_hash,
+                password_salt=password_salt,
+                must_change_password=False,
+                increment_permission_version=True,
+            )
+            OperationLogRepository(uow).add(
+                action_type="password.factory_recover",
+                result="success",
+                actor_id=None,
+                actor_name=None,
+                target_type="user",
+                target_id=str(row["id"]),
+                summary="厂家密码重置用户密码。",
+                details={"username": normalized_username},
+            )
+            uow.commit()
         return ServiceResult.ok(None)
 
     def require_app_exit(self, session_or_id: Session | str) -> ServiceResult[None]:
@@ -204,6 +271,28 @@ class AuthService:
         except Exception as exc:
             return ServiceResult.fail(code=int(ErrorCode.PERMISSION_DENIED), message=str(exc))
         return ServiceResult.ok(None)
+
+    def _log_factory_recovery(self, username: str, result: str, *, uow: UnitOfWork | None = None) -> None:
+        def add_log(active_uow: UnitOfWork) -> None:
+            OperationLogRepository(active_uow).add(
+                action_type="password.factory_recover",
+                result=result,
+                actor_id=None,
+                actor_name=None,
+                target_type="user",
+                summary="厂家密码重置用户密码失败。",
+                details={"username": username or "<empty>"},
+            )
+
+        if uow is not None:
+            add_log(uow)
+            return
+        try:
+            with UnitOfWork(self._database) as active_uow:
+                add_log(active_uow)
+                active_uow.commit()
+        except Exception:
+            return
 
 
 def hash_password(password: str) -> tuple[str, str]:

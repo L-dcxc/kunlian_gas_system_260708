@@ -9,7 +9,7 @@ from app.db.repositories.user_repository import UserRepository
 from app.db.unit_of_work import UnitOfWork
 from app.services.auth_service import Session, SessionStore, hash_password
 from app.services.errors import ErrorCode
-from app.services.models import ServiceResult
+from app.services.models import Page, Pagination, ServiceResult
 from app.services.permissions import Role, SensitiveAction, normalize_role, should_increment_permission_version
 
 
@@ -36,6 +36,7 @@ class UserView:
     role: str
     is_active: bool
     permission_version: int
+    must_change_password: bool
     created_at: str
     updated_at: str
 
@@ -44,6 +45,39 @@ class UserService:
     def __init__(self, database: Database, session_store: SessionStore) -> None:
         self._database = database
         self._session_store = session_store
+
+    def ensure_default_admin(self) -> ServiceResult[UserView]:
+        with UnitOfWork(self._database) as uow:
+            users = UserRepository(uow)
+            existing = users.find_active_by_username("admin")
+            if existing is not None:
+                uow.commit()
+                return ServiceResult.ok(_row_to_view(existing), message="admin exists")
+            if users.count_not_deleted() > 0 or users.count_active_admins() > 0:
+                uow.commit()
+                return ServiceResult.fail(code=int(ErrorCode.CONFLICT), message="已有用户，跳过默认管理员初始化")
+            password_hash, password_salt = hash_password("admin123")
+            user_id = users.create_user(
+                username="admin",
+                password_hash=password_hash,
+                password_salt=password_salt,
+                role=Role.ADMIN.value,
+                is_active=True,
+                must_change_password=True,
+            )
+            row = users.find_by_id(user_id)
+            OperationLogRepository(uow).add(
+                action_type="users.bootstrap_admin",
+                result="success",
+                actor_id=None,
+                actor_name=None,
+                target_type="user",
+                target_id=str(user_id),
+                summary="系统初始化默认管理员账号。",
+                details={"username": "admin", "must_change_password": "true"},
+            )
+            uow.commit()
+        return ServiceResult.ok(_row_to_view(row))
 
     def create_user(self, session_or_id: Session | str, command: CreateUserCommand) -> ServiceResult[UserView]:
         actor = self._require_user_management(session_or_id, SensitiveAction.USER_CREATE.value, "新增用户")
@@ -84,6 +118,44 @@ class UserService:
             return ServiceResult.ok(_row_to_view(row))
         except sqlite3.IntegrityError:
             return ServiceResult.fail(code=int(ErrorCode.CONFLICT), message="用户名已存在或管理员唯一约束冲突")
+
+    def list_users(
+        self,
+        session_or_id: Session | str,
+        *,
+        role: str | None = None,
+        is_active: bool | None = None,
+        pagination: Pagination | None = None,
+    ) -> ServiceResult[Page[UserView]]:
+        actor = self._require_user_management(session_or_id, SensitiveAction.USER_MANAGE.value, "查看用户列表")
+        if isinstance(actor, ServiceResult):
+            return actor
+        try:
+            normalized_role = normalize_role(role) if role is not None else None
+            page = pagination or Pagination()
+            clauses = ["deleted_at IS NULL"]
+            parameters: list[object] = []
+            if normalized_role is not None:
+                clauses.append("role = ?")
+                parameters.append(normalized_role)
+            if is_active is not None:
+                clauses.append("is_active = ?")
+                parameters.append(1 if is_active else 0)
+            where = " AND ".join(clauses)
+            with UnitOfWork(self._database) as uow:
+                users = UserRepository(uow)
+                rows, total = users.list_page(
+                    page=page.page,
+                    per_page=page.per_page,
+                    sort_by="username",
+                    sort_direction="ASC",
+                    where_clause=where,
+                    parameters=tuple(parameters),
+                )
+                uow.commit()
+            return ServiceResult.ok(Page(items=tuple(_row_to_view(row) for row in rows), pagination=page, total=total))
+        except ValueError as exc:
+            return ServiceResult.fail(code=int(ErrorCode.VALIDATION_ERROR), message=str(exc))
 
     def update_user(
         self,
@@ -275,6 +347,7 @@ def _row_to_view(row) -> UserView:
         role=str(row["role"]),
         is_active=int(row["is_active"]) == 1,
         permission_version=int(row["permission_version"]),
+        must_change_password=int(row["must_change_password"]) == 1,
         created_at=str(row["created_at"]),
         updated_at=str(row["updated_at"]),
     )

@@ -1,10 +1,7 @@
 from __future__ import annotations
 
-import base64
 import hashlib
 import hmac
-import json
-import os
 import platform
 import uuid
 from dataclasses import dataclass
@@ -18,11 +15,15 @@ from app.db.repositories.operation_log_repository import OperationLogRepository
 from app.db.unit_of_work import UnitOfWork
 from app.services.auth_service import Session, SessionStore
 from app.services.errors import ErrorCode
+from app.services.license_codes import (
+    DEFAULT_LICENSE_SIGNING_KEY,
+    b64encode,
+    build_authorization_code,
+    loads_payload,
+    parse_authorization_code,
+)
 from app.services.models import ServiceResult
 from app.services.permissions import Permission
-
-LICENSE_CODE_PREFIX = "gas-license-v1"
-MAX_AUTHORIZATION_CODE_LENGTH = 4096
 
 
 @dataclass(frozen=True, slots=True)
@@ -53,7 +54,7 @@ class LicenseService:
         session_store: SessionStore | None = None,
     ) -> None:
         self._database = database
-        self._activation_signing_key = activation_signing_key or _env_signing_key()
+        self._activation_signing_key = activation_signing_key or DEFAULT_LICENSE_SIGNING_KEY
         self._machine_fingerprint_provider = machine_fingerprint_provider or _default_machine_fingerprint
         self._session_store = session_store
 
@@ -68,7 +69,7 @@ class LicenseService:
             return LicenseStatus("invalid", machine_hash, message="授权信息与当前机器不匹配")
         if not self._verify_integrity(row):
             return LicenseStatus("invalid", machine_hash, message="授权信息校验失败")
-        payload = _loads_payload(str(row["license_payload"]))
+        payload = loads_payload(str(row["license_payload"]))
         if payload is None:
             return LicenseStatus("invalid", machine_hash, message="授权信息校验失败")
         expires_at = payload.get("expires_at")
@@ -96,7 +97,7 @@ class LicenseService:
             self._log_activation(actor, "denied", "授权码校验失败")
             return ServiceResult.fail(code=int(ErrorCode.PERMISSION_DENIED), message="授权码无效")
 
-        payload = _loads_payload(payload_json)
+        payload = loads_payload(payload_json)
         machine_hash = self.machine_fingerprint_hash()
         if payload is None or payload.get("machine_fingerprint_hash") != machine_hash:
             self._log_activation(actor, "denied", "授权码校验失败")
@@ -150,33 +151,12 @@ class LicenseService:
     def build_authorization_code(self, payload: dict[str, Any]) -> str:
         if self._activation_signing_key is None:
             raise ValueError("activation signing key is not configured")
-        payload_json = _canonical_payload(payload)
-        payload_b64 = _b64encode(payload_json.encode("utf-8"))
-        signature = self._authorization_signature(payload_b64)
-        return f"{LICENSE_CODE_PREFIX}.{payload_b64}.{signature}"
+        return build_authorization_code(payload, self._activation_signing_key)
 
     def _parse_and_verify_code(self, authorization_code: str) -> tuple[str, str]:
-        if not isinstance(authorization_code, str) or not authorization_code.strip():
-            raise ValueError("authorization code is required")
-        code = authorization_code.strip()
-        if len(code) > MAX_AUTHORIZATION_CODE_LENGTH:
-            raise ValueError("authorization code is too long")
-        parts = code.split(".")
-        if len(parts) != 3 or parts[0] != LICENSE_CODE_PREFIX:
-            raise ValueError("unsupported authorization code")
-        payload_b64, signature = parts[1], parts[2]
-        expected = self._authorization_signature(payload_b64)
-        if not hmac.compare_digest(signature, expected):
-            raise ValueError("invalid signature")
-        payload_json = _b64decode_text(payload_b64)
-        _loads_payload(payload_json, strict=True)
-        return payload_json, signature
-
-    def _authorization_signature(self, payload_b64: str) -> str:
         if self._activation_signing_key is None:
             raise ValueError("activation signing key is not configured")
-        message = f"{LICENSE_CODE_PREFIX}.{payload_b64}".encode("utf-8")
-        return _b64encode(hmac.new(self._activation_signing_key, message, hashlib.sha256).digest())
+        return parse_authorization_code(authorization_code, self._activation_signing_key)
 
     def _integrity_signature(
         self,
@@ -195,7 +175,7 @@ class LicenseService:
         message = "|".join(
             [machine_hash, payload_json, authorization_signature, status, activated_at, expires_at or ""]
         )
-        return _b64encode(hmac.new(key, message.encode("utf-8"), hashlib.sha256).digest())
+        return b64encode(hmac.new(key, message.encode("utf-8"), hashlib.sha256).digest())
 
     def _verify_integrity(self, row) -> bool:
         expected = self._integrity_signature(
@@ -231,33 +211,8 @@ class LicenseService:
             )
 
 
-def _env_signing_key() -> bytes | None:
-    value = os.environ.get("GAS_ALARM_LICENSE_SIGNING_KEY")
-    if not value:
-        return None
-    return value.encode("utf-8")
-
-
 def _default_machine_fingerprint() -> str:
     return "|".join([platform.node(), platform.system(), platform.machine(), str(uuid.getnode())])
-
-
-def _canonical_payload(payload: dict[str, Any]) -> str:
-    return json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
-
-
-def _loads_payload(payload_json: str, strict: bool = False) -> dict[str, Any] | None:
-    try:
-        payload = json.loads(payload_json)
-    except json.JSONDecodeError as exc:
-        if strict:
-            raise ValueError("invalid payload") from exc
-        return None
-    if not isinstance(payload, dict):
-        if strict:
-            raise ValueError("invalid payload")
-        return None
-    return payload
 
 
 def _is_expired(expires_at: str) -> bool:
@@ -272,14 +227,3 @@ def _is_expired(expires_at: str) -> bool:
 
 def _mask_hash(value: str) -> str:
     return f"{value[:8]}...{value[-4:]}" if len(value) > 16 else "<hidden>"
-
-
-def _b64encode(value: bytes) -> str:
-    return base64.urlsafe_b64encode(value).decode("ascii")
-
-
-def _b64decode_text(value: str) -> str:
-    try:
-        return base64.urlsafe_b64decode(value.encode("ascii")).decode("utf-8")
-    except Exception as exc:
-        raise ValueError("invalid base64") from exc

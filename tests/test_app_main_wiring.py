@@ -220,12 +220,21 @@ def _admin_session() -> Session:
 def _seed_and_login_admin(context) -> Session:
     password_hash, password_salt = hash_password("AdminPass123")
     with UnitOfWork(context.db) as uow:
-        UserRepository(uow).create_user(
-            username="admin",
-            password_hash=password_hash,
-            password_salt=password_salt,
-            role="admin",
-        )
+        user = UserRepository(uow).find_active_by_username("admin")
+        if user is None:
+            UserRepository(uow).create_user(
+                username="admin",
+                password_hash=password_hash,
+                password_salt=password_salt,
+                role="admin",
+            )
+        else:
+            UserRepository(uow).update_user(
+                int(user["id"]),
+                password_hash=password_hash,
+                password_salt=password_salt,
+                must_change_password=False,
+            )
         uow.commit()
     result = context.containers.services["auth"].login("admin", "AdminPass123")
     if not result.success or result.data is None:

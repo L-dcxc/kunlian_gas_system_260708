@@ -81,10 +81,12 @@ class DetectorsPage(QWidget):
         self.delete_button = QPushButton("删除"); self.delete_button.setProperty("variant", "danger")
         self.new_button.clicked.connect(self.new_record); self.save_button.clicked.connect(self.save_current); self.delete_button.clicked.connect(self.delete_selected)
         self.port_combo.currentIndexChanged.connect(self._filter_controller_combo)
+        self.gas_combo.currentIndexChanged.connect(self._apply_selected_gas_defaults)
+        self._apply_field_widths()
         self._build_form()
 
         actions = QHBoxLayout(); actions.addWidget(self.new_button); actions.addWidget(self.save_button); actions.addWidget(self.delete_button); actions.addStretch(1)
-        body = QHBoxLayout(); body.addWidget(self.table, 5); body.addWidget(self.form, 3)
+        body = QVBoxLayout(); body.setSpacing(12); body.addWidget(self.table, 3); body.addWidget(self.form, 2)
         layout = QVBoxLayout(self); layout.setContentsMargins(0, 0, 0, 0); layout.setSpacing(12)
         layout.addWidget(self.error_banner); layout.addLayout(actions); layout.addLayout(body, 1)
         self._apply_permission_state(); self._apply_selection_state()
@@ -219,13 +221,65 @@ class DetectorsPage(QWidget):
                 self.controller_combo.addItem(str(row.get("name", f"控制器 {row.get('id')}")), int(row.get("id", 0)))
         _set_combo(self.controller_combo, current)
 
+    def _apply_selected_gas_defaults(self) -> None:
+        gas = _find(self._gas_types, self.gas_combo.currentData())
+        if gas is None:
+            return
+        self.unit_edit.setText(str(gas.get("unit") or ""))
+        self.range_min_edit.setText(_compact_number(gas.get("range_min"), "0"))
+        self.range_max_edit.setText(_compact_number(gas.get("range_max"), "100"))
+        self.alarm_low_edit.setText(_compact_number(gas.get("default_alarm_low"), ""))
+        self.alarm_high_edit.setText(_compact_number(gas.get("default_alarm_high"), ""))
+
+    def _apply_field_widths(self) -> None:
+        for widget in (self.port_combo, self.controller_combo, self.gas_combo, self.name_edit, self.model_edit):
+            widget.setMaximumWidth(260)
+        for widget in (self.position_edit, self.sensor_life_edit):
+            widget.setMaximumWidth(180)
+        for widget in (
+            self.address_spin,
+            self.register_spin,
+            self.unit_edit,
+            self.range_min_edit,
+            self.range_max_edit,
+            self.alarm_low_edit,
+            self.alarm_high_edit,
+            self.alarm_type_combo,
+            self.store_interval_spin,
+            self.calibration_cycle_spin,
+        ):
+            widget.setMaximumWidth(140)
+
     def _build_form(self) -> None:
-        grid = QGridLayout(self.form); grid.setContentsMargins(16, 16, 16, 16); grid.setHorizontalSpacing(10); grid.setVerticalSpacing(7)
-        fields = (("端口", self.port_combo), ("控制器", self.controller_combo), ("位号", self.position_edit), ("名称", self.name_edit), ("设备地址", self.address_spin), ("寄存器索引", self.register_spin), ("气体类型", self.gas_combo), ("单位", self.unit_edit), ("量程下限", self.range_min_edit), ("量程上限", self.range_max_edit), ("低报阈值", self.alarm_low_edit), ("高报阈值", self.alarm_high_edit), ("型号", self.model_edit), ("报警类型", self.alarm_type_combo), ("", self.sound_check), ("存储周期(s)", self.store_interval_spin), ("传感器寿命", self.sensor_life_edit), ("校验周期(天)", self.calibration_cycle_spin), ("", self.enabled_check), ("", self.validation_hint))
-        for row, (label, widget) in enumerate(fields):
+        fields_panel = QWidget(self.form)
+        fields_panel.setObjectName("ConfigFormFields")
+        fields_panel.setMaximumWidth(980)
+        shell = QHBoxLayout(self.form)
+        shell.setContentsMargins(16, 14, 16, 14)
+        shell.setSpacing(0)
+        shell.addWidget(fields_panel)
+        shell.addStretch(1)
+
+        grid = QGridLayout(fields_panel); self.form_grid = grid; grid.setContentsMargins(0, 0, 0, 0); grid.setHorizontalSpacing(12); grid.setVerticalSpacing(8)
+        grid.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop)
+        fields = (
+            ("端口", self.port_combo), ("控制器", self.controller_combo), ("位号", self.position_edit),
+            ("名称", self.name_edit), ("设备地址", self.address_spin), ("寄存器索引", self.register_spin),
+            ("气体类型", self.gas_combo), ("单位", self.unit_edit), ("报警类型", self.alarm_type_combo),
+            ("量程下限", self.range_min_edit), ("量程上限", self.range_max_edit), ("低报阈值", self.alarm_low_edit),
+            ("高报阈值", self.alarm_high_edit), ("存储周期(s)", self.store_interval_spin), ("校验周期(天)", self.calibration_cycle_spin),
+            ("型号", self.model_edit), ("传感器寿命", self.sensor_life_edit), ("", self.sound_check),
+            ("", self.enabled_check),
+        )
+        for index, (label, widget) in enumerate(fields):
+            row = index // 3
+            column = (index % 3) * 2
             if label:
-                label_widget = QLabel(label); label_widget.setProperty("role", "fieldLabel"); grid.addWidget(label_widget, row, 0)
-            grid.addWidget(widget, row, 1)
+                label_widget = QLabel(label); label_widget.setProperty("role", "fieldLabel"); grid.addWidget(label_widget, row, column)
+            grid.addWidget(widget, row, column + 1, alignment=Qt.AlignmentFlag.AlignLeft)
+        hint_row = (len(fields) + 2) // 3
+        grid.addWidget(self.validation_hint, hint_row, 0, 1, 6)
+        grid.setColumnMinimumWidth(0, 82); grid.setColumnMinimumWidth(2, 82); grid.setColumnMinimumWidth(4, 82)
 
     def _selection_changed(self) -> None:
         indexes = self.table.table.selectionModel().selectedRows()
@@ -294,6 +348,18 @@ def _spin(minimum: int, maximum: int, value: int) -> QSpinBox:
 def _optional_float(text: str) -> float | None:
     value = text.strip()
     return None if value == "" else float(value)
+
+
+def _compact_number(value: object, default: str) -> str:
+    if value in {None, ""}:
+        return default
+    try:
+        numeric = float(value)
+    except (TypeError, ValueError):
+        return str(value)
+    if numeric.is_integer():
+        return str(int(numeric))
+    return str(numeric)
 
 
 def _confirm_delete_detector(parent: QWidget, row: dict[str, Any]) -> bool:

@@ -96,6 +96,42 @@ class AuthUsersPermissionsLicenseTests(unittest.TestCase):
                 self.assertNotIn("OldPass123", str(details))
                 uow.commit()
 
+    def test_default_admin_requires_first_password_change_and_factory_recovery(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            database = self._database(temp_dir)
+            session_store = SessionStore()
+            auth = AuthService(database, session_store)
+            user_service = UserService(database, session_store)
+
+            created = user_service.ensure_default_admin()
+            self.assertTrue(created.success)
+            self.assertEqual(created.data.username, "admin")
+            self.assertTrue(created.data.must_change_password)
+
+            logged_in = auth.login("admin", "admin123")
+            self.assertTrue(logged_in.success)
+            self.assertTrue(logged_in.data.must_change_password)
+
+            changed = auth.change_password(logged_in.data, "admin123", "NewAdmin123")
+            self.assertTrue(changed.success)
+            self.assertFalse(auth.login("admin", "admin123").success)
+            recovered_session = auth.login("admin", "NewAdmin123")
+            self.assertTrue(recovered_session.success)
+            self.assertFalse(recovered_session.data.must_change_password)
+
+            bad_recovery = auth.recover_password_with_factory_password("admin", "wrong", "Recovered123")
+            self.assertFalse(bad_recovery.success)
+            recovered = auth.recover_password_with_factory_password("admin", "kunlian20131213", "Recovered123")
+            self.assertTrue(recovered.success)
+            self.assertTrue(auth.login("admin", "Recovered123").success)
+
+            with UnitOfWork(database) as uow:
+                rows, _ = OperationLogRepository(uow).list_for_action(action_type="password.factory_recover")
+                text = " ".join(str(row["summary"]) + str(row["details_json"]) for row in rows)
+                self.assertNotIn("kunlian20131213", text)
+                self.assertNotIn("Recovered123", text)
+                uow.commit()
+
     def test_user_admin_uniqueness_unique_admin_protection_and_user_logs(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             database = self._database(temp_dir)
@@ -121,6 +157,10 @@ class AuthUsersPermissionsLicenseTests(unittest.TestCase):
                 CreateUserCommand(username="operator1", password="Operator123", role="operator"),
             )
             self.assertTrue(operator.success)
+            listed = user_service.list_users(admin_session)
+            self.assertTrue(listed.success, listed.message)
+            self.assertEqual(listed.data.total, 2)
+            self.assertEqual([item.username for item in listed.data.items], ["admin", "operator1"])
             with UnitOfWork(database) as uow:
                 rows, _ = OperationLogRepository(uow).list_for_action(action_type="users.create")
                 self.assertGreaterEqual(len(rows), 1)

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
+from typing import Sequence
 
 from app.db.repositories.base import EntityRepository
 
@@ -9,6 +10,10 @@ class UserRepository(EntityRepository):
     table_name = "users"
     allowed_sort_columns = frozenset({"id", "username", "role", "is_active", "created_at", "updated_at"})
     default_sort = "username"
+
+    def count_not_deleted(self) -> int:
+        row = self.fetch_one("SELECT COUNT(*) AS total FROM users WHERE deleted_at IS NULL")
+        return int(row["total"] if row is not None else 0)
 
     def find_by_username(self, username: str):
         return self.fetch_one("SELECT * FROM users WHERE username = ?", (username,))
@@ -19,6 +24,30 @@ class UserRepository(EntityRepository):
             (username,),
         )
 
+    def list_page(
+        self,
+        *,
+        page: int = 1,
+        per_page: int = 20,
+        sort_by: str | None = None,
+        sort_direction: str = "ASC",
+        where_clause: str = "",
+        parameters: Sequence[object] = (),
+    ):
+        rows, _pagination = super().list_page(
+            page=page,
+            per_page=per_page,
+            sort_by=sort_by,
+            sort_direction=sort_direction,
+            where_clause=where_clause,
+            parameters=parameters,
+        )
+        if where_clause:
+            total_row = self.fetch_one(f"SELECT COUNT(*) AS total FROM users WHERE {where_clause}", tuple(parameters))
+        else:
+            total_row = self.fetch_one("SELECT COUNT(*) AS total FROM users")
+        return rows, int(total_row["total"] if total_row is not None else 0)
+
     def create_user(
         self,
         *,
@@ -27,16 +56,26 @@ class UserRepository(EntityRepository):
         password_salt: str,
         role: str,
         is_active: bool = True,
+        must_change_password: bool = False,
     ) -> int:
         now = _now()
         cursor = self.execute(
             """
             INSERT INTO users(
                 username, password_hash, password_salt, role, is_active,
-                permission_version, created_at, updated_at
-            ) VALUES (?, ?, ?, ?, ?, 1, ?, ?)
+                must_change_password, permission_version, created_at, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?)
             """,
-            (username, password_hash, password_salt, role, 1 if is_active else 0, now, now),
+            (
+                username,
+                password_hash,
+                password_salt,
+                role,
+                1 if is_active else 0,
+                1 if must_change_password else 0,
+                now,
+                now,
+            ),
         )
         return int(cursor.lastrowid)
 
@@ -49,6 +88,7 @@ class UserRepository(EntityRepository):
         is_active: bool | None = None,
         password_hash: str | None = None,
         password_salt: str | None = None,
+        must_change_password: bool | None = None,
         increment_permission_version: bool = False,
     ) -> None:
         assignments: list[str] = ["updated_at = ?"]
@@ -68,6 +108,9 @@ class UserRepository(EntityRepository):
         if password_salt is not None:
             assignments.append("password_salt = ?")
             parameters.append(password_salt)
+        if must_change_password is not None:
+            assignments.append("must_change_password = ?")
+            parameters.append(1 if must_change_password else 0)
         if increment_permission_version:
             assignments.append("permission_version = permission_version + 1")
         parameters.append(user_id)

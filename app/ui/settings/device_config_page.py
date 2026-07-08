@@ -79,8 +79,8 @@ class DeviceConfigPage(QWidget):
         self.nav.setProperty("panel", "true")
         self.nav_group = QButtonGroup(self)
         self.nav_group.setExclusive(True)
-        nav_layout = QVBoxLayout(self.nav)
-        nav_layout.setContentsMargins(8, 8, 8, 8)
+        nav_layout = QHBoxLayout(self.nav)
+        nav_layout.setContentsMargins(8, 6, 8, 6)
         nav_layout.setSpacing(6)
         self.stack = QStackedWidget()
         for key, title in _CATEGORIES:
@@ -88,16 +88,15 @@ class DeviceConfigPage(QWidget):
             button.setCheckable(True)
             button.clicked.connect(lambda _checked=False, name=key: self.set_category(name))
             self.nav_group.addButton(button)
-            nav_layout.addWidget(button)
+            nav_layout.addWidget(button, 1)
             self._nav_buttons[key] = button
             self._page_keys.append(key)
             page = self._create_page(key)
             if hasattr(page, "configChanged"):
                 page.configChanged.connect(self.configChanged)  # type: ignore[attr-defined]
             self.stack.addWidget(page)
-        nav_layout.addStretch(1)
 
-        body = QHBoxLayout()
+        body = QVBoxLayout()
         body.setSpacing(12)
         body.addWidget(self.nav)
         body.addWidget(self.stack, 1)

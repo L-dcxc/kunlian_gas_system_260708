@@ -12,7 +12,7 @@ from PySide6.QtWidgets import QApplication, QLineEdit
 
 from app.services.errors import ErrorCode
 from app.services.models import ServiceResult
-from app.ui.login import ChangePasswordDialog, LicenseDialog, LoginWindow
+from app.ui.login import ChangePasswordDialog, LicenseDialog, LoginWindow, PasswordRecoveryDialog
 from app.ui.login.change_password_dialog import PASSWORD_MISMATCH_TEXT
 from app.ui.login.license_dialog import LICENSE_FAILED_MESSAGE
 from app.ui.login.login_window import LOGIN_FAILED_TEXT
@@ -75,12 +75,50 @@ class FailingAuthService:
         )
 
 
+class SuccessfulAuthService:
+    def __init__(self) -> None:
+        self.calls: list[tuple[str, str]] = []
+
+    def login(self, username: str, password: str) -> ServiceResult[object]:
+        self.calls.append((username, password))
+        return ServiceResult.ok(object())
+
+
+class FakeLoginPreferenceStore:
+    def __init__(self, last_username: str = "") -> None:
+        self.last_username = last_username
+        self.saved: list[str] = []
+
+    def get_last_username(self) -> str:
+        return self.last_username
+
+    def save_last_username(self, username: str) -> None:
+        self.saved.append(username)
+
+
 class PermissionDeniedAuthService:
     def change_password(self, session: object, old_password: str, new_password: str) -> ServiceResult[None]:
         return ServiceResult.fail(
             code=int(ErrorCode.PERMISSION_DENIED),
             message="permission_code=USER_EDIT_OTHER password=secret",
         )
+
+
+class RecoveryAuthService:
+    def __init__(self, success: bool = True) -> None:
+        self.success = success
+        self.calls: list[tuple[str, str, str]] = []
+
+    def recover_password_with_factory_password(
+        self,
+        username: str,
+        factory_password: str,
+        new_password: str,
+    ) -> ServiceResult[None]:
+        self.calls.append((username, factory_password, new_password))
+        if self.success:
+            return ServiceResult.ok(None)
+        return ServiceResult.fail(code=int(ErrorCode.PERMISSION_DENIED), message="厂家密码无效 password=secret")
 
 
 class UiLoginLicenseTests(unittest.TestCase):
@@ -107,10 +145,13 @@ class UiLoginLicenseTests(unittest.TestCase):
         self.assertNotIn("0123456789abcdef0123456789abcdef", dialog.machine_label.text())
         self.assertIn("01234567", dialog.machine_label.text())
         self.assertIn("cdef", dialog.machine_label.text())
+        self.assertTrue(dialog.copy_machine_identifier())
+        self.assertEqual(QApplication.clipboard().text(), FakeLicenseStatus().machine_fingerprint_hash)
 
     def test_login_window_failure_is_unified_password_hidden_and_submit_disabled_during_call(self) -> None:
         auth = FailingAuthService()
-        window = LoginWindow(auth_service=auth, license_service=ActiveLicenseService())
+        preferences = FakeLoginPreferenceStore()
+        window = LoginWindow(auth_service=auth, license_service=ActiveLicenseService(), login_preferences=preferences)
         auth.window = window
         window.username_edit.setText("operator")
         window.password_edit.setText("wrong-password")
@@ -123,6 +164,21 @@ class UiLoginLicenseTests(unittest.TestCase):
         self.assertNotIn("secret", window.error_hint.text())
         self.assertEqual(window.password_edit.echoMode(), QLineEdit.EchoMode.Password)
         self.assertTrue(window.login_button.isEnabled())
+        self.assertEqual(preferences.saved, [])
+
+    def test_login_window_prefills_and_saves_last_successful_username_only(self) -> None:
+        preferences = FakeLoginPreferenceStore("last-admin")
+        auth = SuccessfulAuthService()
+        window = LoginWindow(auth_service=auth, license_service=ActiveLicenseService(), login_preferences=preferences)
+
+        self.assertEqual(window.username_edit.text(), "last-admin")
+
+        window.username_edit.setText("operator")
+        window.password_edit.setText("Operator123")
+        window.submit()
+
+        self.assertEqual(auth.calls, [("operator", "Operator123")])
+        self.assertEqual(preferences.saved, ["operator"])
 
     def test_login_window_blocks_unlicensed_main_system_by_default(self) -> None:
         window = LoginWindow(auth_service=FailingAuthService(), license_service=None)
@@ -146,6 +202,34 @@ class UiLoginLicenseTests(unittest.TestCase):
         self.assertEqual(dialog.old_password_edit.echoMode(), QLineEdit.EchoMode.Password)
         self.assertEqual(dialog.new_password_edit.echoMode(), QLineEdit.EchoMode.Password)
         self.assertEqual(dialog.confirm_password_edit.echoMode(), QLineEdit.EchoMode.Password)
+
+    def test_forced_change_password_cannot_be_cancelled(self) -> None:
+        dialog = ChangePasswordDialog(auth_service=PermissionDeniedAuthService(), session=object(), force_change=True)
+
+        dialog.reject()
+
+        self.assertTrue(dialog.isVisible() or dialog.result() == 0)
+        self.assertIn("修改默认密码", dialog.error_hint.text())
+        self.assertFalse(dialog.cancel_button.isVisible())
+
+    def test_password_recovery_dialog_resets_with_factory_password_without_leaking_details(self) -> None:
+        service = RecoveryAuthService(success=True)
+        dialog = PasswordRecoveryDialog(service, username="admin")
+        dialog.factory_password_edit.setText("kunlian20131213")
+        dialog.new_password_edit.setText("Recovered123")
+        dialog.confirm_password_edit.setText("Recovered123")
+
+        dialog.submit()
+
+        self.assertEqual(service.calls, [("admin", "kunlian20131213", "Recovered123")])
+        self.assertEqual(dialog.result(), 1)
+
+        failing = PasswordRecoveryDialog(RecoveryAuthService(success=False), username="admin")
+        failing.factory_password_edit.setText("bad")
+        failing.new_password_edit.setText("Recovered123")
+        failing.confirm_password_edit.setText("Recovered123")
+        failing.submit()
+        self.assertNotIn("secret", failing.error_hint.text())
 
     def test_change_password_permission_denied_shows_lock_hint_without_sensitive_details(self) -> None:
         dialog = ChangePasswordDialog(

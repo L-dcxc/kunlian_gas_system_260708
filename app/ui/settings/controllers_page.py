@@ -68,10 +68,11 @@ class ControllersPage(QWidget):
         self.new_button.clicked.connect(self.new_record)
         self.save_button.clicked.connect(self.save_current)
         self.delete_button.clicked.connect(self.delete_selected)
+        self._apply_field_widths()
         self._build_form()
 
         actions = QHBoxLayout(); actions.addWidget(self.new_button); actions.addWidget(self.save_button); actions.addWidget(self.delete_button); actions.addStretch(1)
-        body = QHBoxLayout(); body.addWidget(self.table, 3); body.addWidget(self.form, 2)
+        body = QVBoxLayout(); body.setSpacing(12); body.addWidget(self.table, 3); body.addWidget(self.form, 2)
         layout = QVBoxLayout(self); layout.setContentsMargins(0, 0, 0, 0); layout.setSpacing(12)
         layout.addWidget(self.error_banner); layout.addLayout(actions); layout.addLayout(body, 1)
         self._apply_permission_state(); self._apply_selection_state()
@@ -162,11 +163,37 @@ class ControllersPage(QWidget):
             self.port_combo.setCurrentIndex(index)
 
     def _build_form(self) -> None:
-        grid = QGridLayout(self.form); grid.setContentsMargins(16, 16, 16, 16); grid.setHorizontalSpacing(10); grid.setVerticalSpacing(8)
-        for row, (label, widget) in enumerate((("所属端口", self.port_combo), ("名称", self.name_edit), ("Modbus 地址", self.address_spin), ("型号", self.model_edit), ("探测器数量", self.detector_count_spin), ("", self.enabled_check), ("", self.validation_hint))):
+        fields_panel = QWidget(self.form)
+        fields_panel.setObjectName("ConfigFormFields")
+        fields_panel.setMaximumWidth(760)
+        shell = QHBoxLayout(self.form)
+        shell.setContentsMargins(16, 14, 16, 14)
+        shell.setSpacing(0)
+        shell.addWidget(fields_panel)
+        shell.addStretch(1)
+
+        grid = QGridLayout(fields_panel); self.form_grid = grid; grid.setContentsMargins(0, 0, 0, 0); grid.setHorizontalSpacing(12); grid.setVerticalSpacing(8)
+        grid.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop)
+        fields = (
+            ("所属端口", self.port_combo), ("名称", self.name_edit),
+            ("Modbus 地址", self.address_spin), ("型号", self.model_edit),
+            ("探测器数量", self.detector_count_spin), ("", self.enabled_check),
+        )
+        for index, (label, widget) in enumerate(fields):
+            row = index // 2
+            column = 0 if index % 2 == 0 else 2
             if label:
-                label_widget = QLabel(label); label_widget.setProperty("role", "fieldLabel"); grid.addWidget(label_widget, row, 0)
-            grid.addWidget(widget, row, 1)
+                label_widget = QLabel(label); label_widget.setProperty("role", "fieldLabel"); grid.addWidget(label_widget, row, column)
+            grid.addWidget(widget, row, column + 1, alignment=Qt.AlignmentFlag.AlignLeft)
+        hint_row = (len(fields) + 1) // 2
+        grid.addWidget(self.validation_hint, hint_row, 0, 1, 4)
+        grid.setColumnMinimumWidth(0, 82); grid.setColumnMinimumWidth(2, 82)
+
+    def _apply_field_widths(self) -> None:
+        for widget in (self.port_combo, self.name_edit, self.model_edit):
+            widget.setMaximumWidth(260)
+        for widget in (self.address_spin, self.detector_count_spin):
+            widget.setMaximumWidth(140)
 
     def _selection_changed(self) -> None:
         indexes = self.table.table.selectionModel().selectedRows()

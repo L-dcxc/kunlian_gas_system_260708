@@ -12,6 +12,7 @@ from PySide6.QtWidgets import (
     QProgressBar,
     QPushButton,
     QStackedLayout,
+    QHeaderView,
     QTableView,
     QVBoxLayout,
     QWidget,
@@ -121,6 +122,7 @@ class DataTable(QWidget):
         self.table.setTextElideMode(Qt.TextElideMode.ElideRight)
         self.table.setSelectionBehavior(QTableView.SelectionBehavior.SelectRows)
         self.table.setEditTriggers(QTableView.EditTrigger.NoEditTriggers)
+        self._apply_column_layout(columns)
 
         self._stack = QStackedLayout()
         self._ready_page = QWidget(self)
@@ -167,6 +169,13 @@ class DataTable(QWidget):
 
     def set_columns(self, columns: Sequence[TableColumn]) -> None:
         self._model.set_columns(columns)
+        self._apply_column_layout(columns)
+
+    def _apply_column_layout(self, columns: Sequence[TableColumn]) -> None:
+        header = self.table.horizontalHeader()
+        header.setSectionResizeMode(QHeaderView.ResizeMode.Interactive)
+        header.setStretchLastSection(True)
+        self.table.verticalHeader().setVisible(False)
         for index, column in enumerate(columns):
             if column.width is not None:
                 self.table.setColumnWidth(index, column.width)

@@ -4,7 +4,7 @@ from datetime import datetime
 from typing import Any
 
 from PySide6.QtCore import QTimer
-from PySide6.QtWidgets import QFrame, QHBoxLayout, QWidget
+from PySide6.QtWidgets import QFrame, QHBoxLayout, QSizePolicy, QWidget
 
 from app.services.models import AcquisitionStatus
 from app.ui.common.errors import controlled_error_text
@@ -28,7 +28,7 @@ class ShellStatusBar(QFrame):
         clock_interval_ms: int = 1000,
     ) -> None:
         super().__init__(parent)
-        self.setObjectName("ShellTopBar")
+        self.setObjectName("ShellBottomStatusBar")
         self._session = session
         self._license_service = license_service
         self._state_store = state_store
@@ -38,10 +38,15 @@ class ShellStatusBar(QFrame):
         self.acquisition_label = _status_label("采集：未启动", "offline")
         self.api_label = _status_label("API：未启动", "offline")
         self.time_label = _status_label("时间：--", "offline")
+        self.license_label.setMinimumWidth(120)
+        self.user_label.setMinimumWidth(180)
+        self.acquisition_label.setMinimumWidth(140)
+        self.api_label.setMinimumWidth(120)
+        self.time_label.setMinimumWidth(190)
 
         layout = QHBoxLayout(self)
-        layout.setContentsMargins(16, 8, 16, 8)
-        layout.setSpacing(12)
+        layout.setContentsMargins(16, 3, 16, 3)
+        layout.setSpacing(16)
         for label in (self.license_label, self.user_label, self.acquisition_label, self.api_label):
             layout.addWidget(label)
         layout.addStretch(1)
@@ -115,8 +120,11 @@ class ShellStatusBar(QFrame):
 
 def _status_label(text: str, status: str) -> SafeTextLabel:
     label = SafeTextLabel(text, selectable=True, max_chars=256)
+    label.setObjectName("ShellStatusLabel")
     label.setProperty("role", "statusBadge")
     label.setProperty("status", status)
+    label.setWordWrap(False)
+    label.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Fixed)
     return label
 
 

@@ -69,6 +69,7 @@ def build_default_page_registry() -> PageRegistry:
             PageEntry("device", "设备监控", Permission.MONITOR_VIEW.value, _device_page),
             PageEntry("chart", "曲线分析", Permission.CHART_VIEW.value, _chart_page),
             PageEntry("records", "记录查询", Permission.RECORD_VIEW.value, _records_page),
+            PageEntry("users", "账号管理", Permission.USER_MANAGE.value, _users_page),
             PageEntry("settings", "系统配置", Permission.SYSTEM_SETTINGS.value, _settings_page),
             PageEntry("debug", "设备调试", Permission.DEVICE_DEBUG_VIEW.value, _debug_page),
             PageEntry("backup", "备份恢复", Permission.BACKUP_RESTORE.value, _backup_page),
@@ -150,6 +151,14 @@ def _records_page(ctx: PageFactoryContext) -> QWidget:
     from app.ui.records.records_page import RecordsPage
 
     return RecordsPage(record_service=record_service, session=ctx.session)
+
+
+def _users_page(ctx: PageFactoryContext) -> QWidget:
+    from app.ui.settings.users_page import UserManagementPage
+
+    page = UserManagementPage(user_service=_service(ctx, "users"), session=ctx.session)
+    page.load_users()
+    return page
 
 
 def _settings_page(ctx: PageFactoryContext) -> QWidget:

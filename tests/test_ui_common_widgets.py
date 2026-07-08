@@ -122,6 +122,9 @@ class UiCommonWidgetTests(unittest.TestCase):
         self.assertIn('QDialog[danger="true"] QPushButton[role="confirm"]', qss)
         self.assertIn('QPlainTextEdit[viewer="hex"]', qss)
         self.assertIn('QFrame[role="metricCard"][status="highAlarm"]', qss)
+        self.assertIn("QPushButton:focus { outline: none; }", qss)
+        self.assertIn("QTableView::item:focus", qss)
+        self.assertIn("QCheckBox:focus { outline: none; }", qss)
 
 
 if __name__ == "__main__":

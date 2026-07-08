@@ -5,6 +5,7 @@ from typing import Any
 
 from PySide6.QtCore import Signal, Qt
 from PySide6.QtWidgets import (
+    QApplication,
     QDialog,
     QFileDialog,
     QFrame,
@@ -40,6 +41,7 @@ class LicenseDialog(QDialog):
         self._actor = actor
         self._submitting = False
         self._selected_file: Path | None = None
+        self._machine_identifier = ""
 
         self.setWindowTitle("软件授权")
         self.setModal(True)
@@ -58,6 +60,8 @@ class LicenseDialog(QDialog):
         self.status_label.setObjectName("LicenseState")
         self.machine_label = SafeTextLabel("机器标识：<待检查>", selectable=True)
         self.machine_label.setProperty("role", "muted")
+        self.copy_machine_button = QPushButton("复制机器码")
+        self.copy_machine_button.clicked.connect(self.copy_machine_identifier)
         self.expires_label = SafeTextLabel("", selectable=False)
         self.expires_label.setProperty("role", "muted")
 
@@ -94,6 +98,7 @@ class LicenseDialog(QDialog):
         card_layout.addWidget(self.subtitle_label)
         card_layout.addWidget(self.status_label)
         card_layout.addWidget(self.machine_label)
+        card_layout.addWidget(self.copy_machine_button)
         card_layout.addWidget(self.expires_label)
         card_layout.addWidget(self.code_label)
         card_layout.addWidget(self.authorization_code_edit)
@@ -112,6 +117,8 @@ class LicenseDialog(QDialog):
         if status is None:
             self._set_status_text("授权状态待检查", "warning")
             self.machine_label.set_safe_text("机器标识：<不可用>")
+            self._machine_identifier = ""
+            self.copy_machine_button.setEnabled(False)
             self.expires_label.set_safe_text("")
             return
 
@@ -122,8 +129,12 @@ class LicenseDialog(QDialog):
             self._set_status_text("授权状态：已过期", "invalid")
         else:
             self._set_status_text("授权状态：未授权", "invalid")
-        machine_id = _mask_machine_identifier(getattr(status, "machine_fingerprint_hash", ""))
-        self.machine_label.set_safe_text(f"机器标识：{machine_id}")
+        self._machine_identifier = normalize_plain_text(
+            getattr(status, "machine_fingerprint_hash", ""),
+            max_chars=128,
+        ).strip()
+        self.copy_machine_button.setEnabled(bool(self._machine_identifier))
+        self.machine_label.set_safe_text(f"机器标识：{_mask_machine_identifier(self._machine_identifier)}")
         expires_at = getattr(status, "expires_at", None)
         self.expires_label.set_safe_text(f"到期时间：{expires_at}" if expires_at else "")
         self.expires_label.setVisible(bool(expires_at))
@@ -193,6 +204,13 @@ class LicenseDialog(QDialog):
         _repolish(self.authorization_code_edit)
         self.activationFailed.emit(LICENSE_FAILED_MESSAGE)
 
+    def copy_machine_identifier(self) -> bool:
+        if not self._machine_identifier:
+            return False
+        QApplication.clipboard().setText(self._machine_identifier)
+        self.file_label.set_safe_text("机器码已复制")
+        return True
+
     def show_validation_error(self, message: object) -> None:
         self.authorization_code_edit.setProperty("validation", "error")
         self.error_hint.set_validation_error(controlled_error_text(message, fallback="输入内容校验失败，请检查后重试。"))
@@ -220,8 +238,12 @@ class LicenseDialog(QDialog):
     def _apply_status(self, status: object) -> None:
         is_active = bool(getattr(status, "is_active", False))
         self._set_status_text("授权状态：已授权" if is_active else "授权状态：未授权", "valid" if is_active else "invalid")
-        machine_id = _mask_machine_identifier(getattr(status, "machine_fingerprint_hash", ""))
-        self.machine_label.set_safe_text(f"机器标识：{machine_id}")
+        self._machine_identifier = normalize_plain_text(
+            getattr(status, "machine_fingerprint_hash", ""),
+            max_chars=128,
+        ).strip()
+        self.copy_machine_button.setEnabled(bool(self._machine_identifier))
+        self.machine_label.set_safe_text(f"机器标识：{_mask_machine_identifier(self._machine_identifier)}")
         expires_at = getattr(status, "expires_at", None)
         self.expires_label.set_safe_text(f"到期时间：{expires_at}" if expires_at else "")
         self.expires_label.setVisible(bool(expires_at))

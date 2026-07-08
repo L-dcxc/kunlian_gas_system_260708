@@ -115,6 +115,9 @@ class UiUserManagementTests(unittest.TestCase):
 
         self.assertEqual(page.table.state().value, "ready")
         self.assertEqual(page.table.model().data(page.table.model().index(0, 1), Qt.ItemDataRole.DisplayRole), "<b>admin</b>")
+        created_at = page.table.model().data(page.table.model().index(0, 4), Qt.ItemDataRole.DisplayRole)
+        self.assertNotIn("T", created_at)
+        self.assertNotIn("+00:00", created_at)
         self.assertEqual(page.table.model().data(page.table.model().index(0, 6), Qt.ItemDataRole.DisplayRole), "<img src=x>")
         self.assertEqual(page.table.table.editTriggers(), page.table.table.EditTrigger.NoEditTriggers)
 

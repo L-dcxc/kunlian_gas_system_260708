@@ -106,13 +106,15 @@ class PortsPage(QWidget):
         self.new_button.clicked.connect(self.new_record)
         self.channel_combo.currentIndexChanged.connect(self._sync_channel_fields)
 
+        self._apply_field_widths()
         self._build_form()
         actions = QHBoxLayout()
         actions.addWidget(self.new_button)
         actions.addWidget(self.save_button)
         actions.addWidget(self.delete_button)
         actions.addStretch(1)
-        body = QHBoxLayout()
+        body = QVBoxLayout()
+        body.setSpacing(12)
         body.addWidget(self.table, 3)
         body.addWidget(self.form, 2)
         layout = QVBoxLayout(self)
@@ -233,23 +235,56 @@ class PortsPage(QWidget):
         )
 
     def _build_form(self) -> None:
-        grid = QGridLayout(self.form)
-        grid.setContentsMargins(16, 16, 16, 16)
-        grid.setHorizontalSpacing(10)
+        fields_panel = QWidget(self.form)
+        fields_panel.setObjectName("ConfigFormFields")
+        fields_panel.setMaximumWidth(760)
+        shell = QHBoxLayout(self.form)
+        shell.setContentsMargins(16, 14, 16, 14)
+        shell.setSpacing(0)
+        shell.addWidget(fields_panel)
+        shell.addStretch(1)
+
+        grid = QGridLayout(fields_panel)
+        self.form_grid = grid
+        grid.setContentsMargins(0, 0, 0, 0)
+        grid.setHorizontalSpacing(12)
         grid.setVerticalSpacing(8)
+        grid.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop)
         fields = [
             ("端口名称", self.name_edit), ("类型", self.channel_combo), ("串口号", self.serial_port_edit),
             ("波特率", self.baud_spin), ("数据位", self.data_bits_spin), ("校验", self.parity_combo),
             ("停止位", self.stop_bits_combo), ("TCP 主机", self.tcp_host_edit), ("TCP 端口", self.tcp_port_spin),
             ("采集周期", self.poll_spin), ("超时", self.timeout_spin), ("失败阈值", self.failure_spin),
-            ("重连间隔", self.reconnect_spin), ("", self.enabled_check), ("", self.validation_hint),
+            ("重连间隔", self.reconnect_spin), ("", self.enabled_check),
         ]
-        for row, (label, widget) in enumerate(fields):
+        for index, (label, widget) in enumerate(fields):
+            row = index // 2
+            column = 0 if index % 2 == 0 else 2
             if label:
                 label_widget = QLabel(label)
                 label_widget.setProperty("role", "fieldLabel")
-                grid.addWidget(label_widget, row, 0)
-            grid.addWidget(widget, row, 1)
+                grid.addWidget(label_widget, row, column)
+            grid.addWidget(widget, row, column + 1, alignment=Qt.AlignmentFlag.AlignLeft)
+        hint_row = (len(fields) + 1) // 2
+        grid.addWidget(self.validation_hint, hint_row, 0, 1, 4)
+        grid.setColumnMinimumWidth(0, 82)
+        grid.setColumnMinimumWidth(2, 82)
+
+    def _apply_field_widths(self) -> None:
+        for widget in (self.name_edit, self.serial_port_edit, self.tcp_host_edit):
+            widget.setMaximumWidth(260)
+        for widget in (self.channel_combo, self.parity_combo, self.stop_bits_combo):
+            widget.setMaximumWidth(160)
+        for widget in (
+            self.baud_spin,
+            self.data_bits_spin,
+            self.tcp_port_spin,
+            self.poll_spin,
+            self.timeout_spin,
+            self.failure_spin,
+            self.reconnect_spin,
+        ):
+            widget.setMaximumWidth(140)
 
     def _selection_changed(self) -> None:
         indexes = self.table.table.selectionModel().selectedRows()

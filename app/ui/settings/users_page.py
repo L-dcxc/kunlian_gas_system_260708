@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import datetime
 from typing import Any, Sequence
 
 from PySide6.QtCore import Qt, Signal
@@ -67,9 +68,9 @@ class UserManagementPage(QWidget):
         self._dialog_factory = dialog_factory or self._default_dialog_factory
         self._can_manage_users = _can_manage_from_session(session) if can_manage_users is None else can_manage_users
 
-        self.title_label = SafeTextLabel("用户管理", selectable=False)
+        self.title_label = SafeTextLabel("账号管理", selectable=False)
         self.title_label.setProperty("role", "panelTitle")
-        self.subtitle_label = SafeTextLabel("管理本机账号、角色和启用状态。", selectable=False)
+        self.subtitle_label = SafeTextLabel("管理本机登录账号、角色和启用状态。", selectable=False)
         self.subtitle_label.setProperty("role", "muted")
 
         self.permission_hint = PermissionHint()
@@ -360,10 +361,23 @@ def _row_to_table(row: UserRow) -> dict[str, Any]:
         "username": row.username,
         "role_label": "管理员" if row.role == Role.ADMIN.value else "操作员",
         "status_label": "启用" if row.is_active else "禁用",
-        "created_at": row.created_at,
-        "updated_at": row.updated_at,
+        "created_at": _display_time(row.created_at),
+        "updated_at": _display_time(row.updated_at),
         "remark": row.remark,
     }
+
+
+def _display_time(value: object) -> str:
+    text = str(value or "").strip()
+    if not text:
+        return ""
+    try:
+        parsed = datetime.fromisoformat(text.replace("Z", "+00:00"))
+    except ValueError:
+        return text.replace("T", " ")[:16]
+    if parsed.tzinfo is not None:
+        parsed = parsed.astimezone()
+    return parsed.strftime("%Y-%m-%d %H:%M")
 
 
 def _value(source: object, key: str, default: object = None) -> object:

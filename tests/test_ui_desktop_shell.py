@@ -6,15 +6,17 @@ from dataclasses import dataclass
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
-from PySide6.QtCore import Qt
+from PySide6.QtTest import QTest
 from PySide6.QtWidgets import QApplication, QLabel, QWidget
 
 from app.services.models import AcquisitionState, AcquisitionStatus, DeviceStatus, ServiceResult
+from app.services.permissions import Permission
 from app.ui.shell.alert_bar import GlobalAlertBar
 from app.ui.shell.main_window import MainWindowShell
-from app.ui.shell.navigation import ALLOWED_ROLE, KEY_ROLE, ShellNavigation
-from app.ui.shell.page_registry import PageEntry, PageFactoryContext, PageRegistry
+from app.ui.shell.navigation import ShellNavigation
+from app.ui.shell.page_registry import PageEntry, PageFactoryContext, PageRegistry, build_default_page_registry
 from app.ui.shell.status_bar import API_PORT_IN_USE_MESSAGE, ShellStatusBar
+from app.ui.settings.users_page import UserManagementPage
 from app.ui.theme import AppTheme
 
 
@@ -33,12 +35,16 @@ class FakeAuthService:
     def __init__(self, allowed: bool) -> None:
         self.allowed = allowed
         self.calls = 0
+        self.logout_calls = 0
 
     def require_app_exit(self, session: object) -> ServiceResult[None]:
         self.calls += 1
         if self.allowed:
             return ServiceResult.ok(None)
         return ServiceResult.fail(403, "当前账号无权限执行此操作，已记录权限失败事件。")
+
+    def logout(self, session: object) -> None:
+        self.logout_calls += 1
 
 
 class FakeLicenseService:
@@ -60,6 +66,15 @@ class FakeStateStore:
         self.values[key] = value
 
 
+class FakeUserService:
+    def __init__(self) -> None:
+        self.calls = 0
+
+    def list_users(self, session: object, *, role: str | None, is_active: bool | None, pagination: object) -> ServiceResult[tuple[list[object], int]]:
+        self.calls += 1
+        return ServiceResult.ok(([], 0))
+
+
 class DesktopShellTest(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
@@ -78,12 +93,46 @@ class DesktopShellTest(unittest.TestCase):
         denied: list[str] = []
         nav.permissionDenied.connect(denied.append)
 
-        restricted = nav.item(1)
-        self.assertFalse(bool(restricted.data(ALLOWED_ROLE)))
+        restricted = nav.button_for_key("settings")
+        self.assertIsNotNone(restricted)
+        self.assertEqual(restricted.property("allowed"), "false")
         self.assertIn("[锁]", restricted.text())
-        nav.setCurrentRow(1)
+        restricted.click()
 
         self.assertEqual(denied, ["settings"])
+
+    def test_top_navigation_pages_entries_six_at_a_time(self) -> None:
+        entries = tuple(
+            PageEntry(f"page_{index}", f"页面{index}", "monitor.view", lambda ctx: QWidget())
+            for index in range(8)
+        )
+        nav = ShellNavigation(entries, FakeSession(), page_size=6)
+
+        self.assertEqual(nav.page_count(), 2)
+        self.assertEqual(nav.visible_button_texts(), ("页面0", "页面1", "页面2", "页面3", "页面4", "页面5"))
+
+        nav.next_page()
+
+        self.assertEqual(nav.current_page(), 1)
+        self.assertEqual(nav.visible_button_texts(), ("页面6", "页面7"))
+
+    def test_default_registry_exposes_user_management_page(self) -> None:
+        registry = build_default_page_registry()
+        entry = registry.get("users")
+        user_service = FakeUserService()
+
+        page = registry.create(
+            "users",
+            PageFactoryContext(
+                session=FakeSession(role="admin", permissions=("*",)),
+                services={"users": user_service},
+            ),
+        )
+
+        self.assertEqual(entry.title, "账号管理")
+        self.assertEqual(entry.permission, Permission.USER_MANAGE.value)
+        self.assertIsInstance(page, UserManagementPage)
+        self.assertEqual(user_service.calls, 1)
 
     def test_main_window_lazy_loads_pages_and_opens_bigscreen_as_window(self) -> None:
         created: list[str] = []
@@ -153,26 +202,49 @@ class DesktopShellTest(unittest.TestCase):
         bar.refresh()
         self.assertEqual(bar.property("active"), "false")
 
-    def test_close_event_requires_auth_service_exit_permission(self) -> None:
+    def test_close_event_allows_operator_exit_without_permission_gate(self) -> None:
         registry = PageRegistry((PageEntry("monitor", "实时监控", "monitor.view", lambda ctx: QWidget()),))
         denied_auth = FakeAuthService(False)
         denied_shell = MainWindowShell(FakeSession(), registry, auth_service=denied_auth, license_service=FakeLicenseService())
         denied_shell.show()
         denied_shell.close()
         self.app.processEvents()
-        self.assertEqual(denied_auth.calls, 1)
-        self.assertTrue(denied_shell.isVisible())
-        self.assertIn("无权限", denied_shell.message_bar.text())
+        self.assertEqual(denied_auth.calls, 0)
+        self.assertEqual(denied_auth.logout_calls, 1)
+        self.assertFalse(denied_shell.isVisible())
 
-        allowed_auth = FakeAuthService(True)
-        allowed_shell = MainWindowShell(FakeSession(), registry, auth_service=allowed_auth, license_service=FakeLicenseService())
-        allowed_shell.show()
-        allowed_shell.close()
+    def test_logout_button_emits_switch_account_and_permission_message_auto_hides(self) -> None:
+        registry = PageRegistry(
+            (
+                PageEntry("monitor", "实时监控", "monitor.view", lambda ctx: QWidget()),
+                PageEntry("settings", "系统配置", "system.settings", lambda ctx: QWidget()),
+            )
+        )
+        auth = FakeAuthService(False)
+        shell = MainWindowShell(
+            FakeSession(),
+            registry,
+            auth_service=auth,
+            license_service=FakeLicenseService(),
+            message_timeout_ms=20,
+        )
+        logged_out: list[object] = []
+        shell.logoutRequested.connect(logged_out.append)
+        shell.show()
         self.app.processEvents()
-        self.assertEqual(allowed_auth.calls, 1)
-        self.assertFalse(allowed_shell.isVisible())
-        denied_shell._closing_allowed = True
-        denied_shell.close()
+
+        shell.navigation.request_key("settings")
+        self.assertTrue(shell.message_bar.isVisible())
+        self.assertIn("无权限", shell.message_bar.text())
+        QTest.qWait(40)
+        self.app.processEvents()
+        self.assertFalse(shell.message_bar.isVisible())
+
+        shell.logout_button.click()
+        self.app.processEvents()
+        self.assertEqual(logged_out, [shell.session])
+        self.assertEqual(auth.logout_calls, 1)
+        self.assertFalse(shell.isVisible())
 
 
 if __name__ == "__main__":

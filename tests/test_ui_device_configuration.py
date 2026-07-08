@@ -10,7 +10,7 @@ from pathlib import Path
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 from PySide6.QtCore import Qt
-from PySide6.QtWidgets import QApplication, QDialog
+from PySide6.QtWidgets import QApplication, QDialog, QGridLayout
 
 from app.services.auth_service import Session
 from app.services.errors import ErrorCode
@@ -192,6 +192,54 @@ class UiDeviceConfigurationTests(unittest.TestCase):
         detectors.alarm_high_edit.setText("20")
         detectors.save_current()
         self.assertIn("低报阈值不能高于高报阈值", detectors.validation_hint.text())
+
+    def test_detector_form_uses_compact_field_widths_and_gas_defaults(self) -> None:
+        service = FakeDeviceConfigService()
+        service.gas_types.append(
+            {
+                "id": 8,
+                "name": "氧气",
+                "unit": "%Vol",
+                "range_min": 0,
+                "range_max": 25,
+                "default_alarm_low": 19.5,
+                "default_alarm_high": 23.5,
+                "is_enabled": True,
+            }
+        )
+        page = DetectorsPage(service, self.admin_session())
+        page.reload()
+
+        page.gas_combo.setCurrentIndex(page.gas_combo.findData(8))
+
+        self.assertEqual(page.unit_edit.text(), "%Vol")
+        self.assertEqual(page.range_min_edit.text(), "0")
+        self.assertEqual(page.range_max_edit.text(), "25")
+        self.assertEqual(page.alarm_low_edit.text(), "19.5")
+        self.assertEqual(page.alarm_high_edit.text(), "23.5")
+        self.assertLessEqual(page.name_edit.maximumWidth(), 260)
+        self.assertLessEqual(page.address_spin.maximumWidth(), 140)
+        layout = page.form_grid
+        self.assertIsInstance(layout, QGridLayout)
+        self.assertTrue(layout.alignment() & Qt.AlignmentFlag.AlignLeft)
+        self.assertEqual(layout.columnStretch(1), 0)
+        self.assertEqual(layout.columnStretch(3), 0)
+        self.assertLessEqual(layout.parentWidget().maximumWidth(), 980)
+
+    def test_config_forms_keep_compact_grid_instead_of_stretching_fields_apart(self) -> None:
+        service = FakeDeviceConfigService()
+        pages = (
+            PortsPage(service, self.admin_session()),
+            ControllersPage(service, self.admin_session()),
+            GasTypesPage(service, self.admin_session()),
+        )
+        for page in pages:
+            layout = page.form_grid
+            self.assertIsInstance(layout, QGridLayout)
+            self.assertTrue(layout.alignment() & Qt.AlignmentFlag.AlignLeft)
+            self.assertEqual(layout.columnStretch(1), 0)
+            self.assertEqual(layout.columnStretch(3), 0)
+            self.assertLessEqual(layout.parentWidget().maximumWidth(), 760)
 
     def test_protocol_switch_prompt_import_errors_and_plain_filename(self) -> None:
         service = FakeDeviceConfigService()
